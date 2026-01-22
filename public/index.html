@@ -1,43 +1,104 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
   <head>
     <meta charset="utf-8" />
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#000000" />
-    <meta
-      name="description"
-      content="Web site created using create-react-app"
-    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Meta viewport pour mobile responsive -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    
+    <!-- Theme color pour la barre d'adresse mobile (couleur TaxiConnect) -->
+    <meta name="theme-color" content="#f59e0b" />
+    
+    <!-- Meta description pour SEO -->
+    <meta name="description" content="Application Brand Ambassador TaxiConnect - Enrôlement de chauffeurs et passagers, gestion des commissions et suivi des performances" />
+    <meta name="keywords" content="TaxiConnect, Brand Ambassador, BA Command, Taxi, Enrôlement, Mobile Money, Airtel Money, Congo" />
+    <meta name="author" content="TaxiConnect" />
+    
+    <!-- Apple Touch Icon pour iOS -->
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
-    <!--
-      manifest.json provides metadata used when your web app is installed on a
-      user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
-    -->
+    
+    <!-- Manifest pour PWA (Progressive Web App) -->
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
-    <!--
-      Notice the use of %PUBLIC_URL% in the tags above.
-      It will be replaced with the URL of the `public` folder during the build.
-      Only files inside the `public` folder can be referenced from the HTML.
-
-      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
-      work correctly both with client-side routing and a non-root public URL.
-      Learn how to configure a non-root public URL by running `npm run build`.
-    -->
-    <title>React App</title>
+    
+    <!-- Open Graph meta tags pour partage sur réseaux sociaux -->
+    <meta property="og:title" content="BA Command - TaxiConnect" />
+    <meta property="og:description" content="Application pour les Brand Ambassadors TaxiConnect" />
+    <meta property="og:type" content="website" />
+    
+    <title>BA Command - TaxiConnect</title>
+    
+    <!-- Styles inline pour optimisation -->
+    <style>
+      /* Empêcher le zoom sur les inputs mobile */
+      @media screen and (max-width: 768px) {
+        input[type="text"],
+        input[type="tel"],
+        input[type="email"],
+        select,
+        textarea {
+          font-size: 16px !important;
+        }
+      }
+      
+      /* Loading screen */
+      body {
+        margin: 0;
+        background-color: #f9fafb;
+      }
+      
+      /* Désactiver le tap highlight sur mobile */
+      * {
+        -webkit-tap-highlight-color: transparent;
+      }
+    </style>
   </head>
+  
   <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <!-- Message pour utilisateurs sans JavaScript -->
+    <noscript>
+      <div style="
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        background: linear-gradient(135deg, #f59e0b 0%, #ea580c 100%);
+        color: white;
+        text-align: center;
+        padding: 20px;
+        font-family: sans-serif;
+      ">
+        <div>
+          <h1 style="font-size: 24px; margin-bottom: 10px;">⚠️ JavaScript Requis</h1>
+          <p>Vous devez activer JavaScript pour utiliser l'application TaxiConnect BA Command.</p>
+          <p style="margin-top: 10px; font-size: 14px;">Veuillez activer JavaScript dans les paramètres de votre navigateur.</p>
+        </div>
+      </div>
+    </noscript>
+    
+    <!-- Point de montage principal pour React -->
     <div id="root"></div>
+    
     <!--
-      This HTML file is a template.
-      If you open it directly in the browser, you will see an empty page.
-
-      You can add webfonts, meta tags, or analytics to this file.
-      The build step will place the bundled scripts into the <body> tag.
-
-      To begin the development, run `npm start` or `yarn start`.
-      To create a production bundle, use `npm run build` or `yarn build`.
+      Application TaxiConnect BA Command
+      
+      Brand Ambassadors - Enrôlement et Gestion
+      - Dashboard avec statistiques en temps réel
+      - Enrôlement de chauffeurs (QR Code + Manuel)
+      - Enrôlement de passagers
+      - Suivi des recrues et commissions
+      - Classement national des BAs
+      - Challenges et gamification
+      
+      Technologies utilisées:
+      - React 18
+      - Tailwind CSS (local - optimisé pour production)
+      - Lucide React (icônes)
+      - Progressive Web App (PWA)
+      
+      Pour développer: npm start
+      Pour build production: npm run build
     -->
   </body>
 </html>
