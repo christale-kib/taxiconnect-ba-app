@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { UserPlus, LogIn, Lock, Mail, Phone, MapPin } from 'lucide-react';
+import { UserPlus, LogIn, Lock, Mail, Phone } from 'lucide-react';
 import { authService } from '../services/authService';
 
 export default function LoginPage({ onLoginSuccess }) {
