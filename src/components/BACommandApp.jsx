@@ -1,66 +1,62 @@
-import React, { useEffect, useMemo, useCallback, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import api from "../services/api";
 import {
   Award,
   Bell,
-  Home,
-  Users,
-  UserPlus,
-  TrendingUp,
-  Target,
-  Search,
-  Filter,
-  ChevronRight,
-  QrCode,
-  Plus,
-  Gift,
   Camera,
   Check,
-  RefreshCw
+  ChevronRight,
+  Filter,
+  Gift,
+  Home,
+  Plus,
+  QrCode,
+  Search,
+  Target,
+  TrendingUp,
+  UserPlus,
+  Users,
 } from "lucide-react";
-import api from "../config/api"; // ⚠️ Assure-toi que ce fichier existe et exporte un axios instance
-// -------------------------
-// Helpers (mapping backend → UI)
-// -------------------------
-function safeNumber(v, d = 0) {
+function safeNumber(v, def = 0) {
   const n = Number(v);
-  return Number.isFinite(n) ? n : d;
+  return Number.isFinite(n) ? n : def;
 }
-function buildFullName(raw) {
-  const prenom = raw?.prenom ?? raw?.firstName ?? "";
-  const nom = raw?.nom ?? raw?.lastName ?? "";
-  const name = raw?.name ?? "";
-  const full = [prenom, nom].filter(Boolean).join(" ").trim();
-  return full || name || "Brand Ambassador";
-}
-function normalizeBaStats(raw = {}) {
+function normalizeDashboard(payload, fallbackUser) {
+  const raw = payload?.data ?? payload?.stats ?? payload ?? {};
+  const fullName =
+    raw.name ||
+    raw.fullName ||
+    [fallbackUser?.prenom, fallbackUser?.nom].filter(Boolean).join(" ").trim() ||
+    "—";
   return {
-    name: buildFullName(raw),
-    level: raw?.niveau ?? raw?.level ?? "BA",
-    rank: safeNumber(raw?.rang ?? raw?.rank, 0),
-    totalDrivers: safeNumber(raw?.total_chauffeurs ?? raw?.totalDrivers, 0),
-    activeDrivers: safeNumber(raw?.chauffeurs_actifs ?? raw?.activeDrivers, 0),
-    totalPassengers: safeNumber(raw?.total_passagers ?? raw?.totalPassengers, 0),
-    monthlyCommission: safeNumber(raw?.commission_mois ?? raw?.monthlyCommission, 0),
-    pendingCommission: safeNumber(raw?.commission_en_attente ?? raw?.pendingCommission, 0),
-    streak: safeNumber(raw?.serie_jours ?? raw?.streak, 0),
-    targetProgress: safeNumber(raw?.targetProgress ?? raw?.progress, 0)
+    name: fullName,
+    level: raw.level ?? raw.niveau ?? "Brand Ambassador",
+    rank: safeNumber(raw.rank ?? raw.rang, 0),
+    totalDrivers: safeNumber(raw.totalDrivers ?? raw.total_chauffeurs ?? raw.totalChauffeurs, 0),
+    activeDrivers: safeNumber(raw.activeDrivers ?? raw.chauffeurs_actifs ?? raw.chauffeursActifs, 0),
+    totalPassengers: safeNumber(raw.totalPassengers ?? raw.total_passagers ?? raw.totalPassagers, 0),
+    monthlyCommission: safeNumber(raw.monthlyCommission ?? raw.commission_mois ?? raw.commissionMois, 0),
+    pendingCommission: safeNumber(raw.pendingCommission ?? raw.pending_commission ?? raw.commission_en_attente, 0),
+    streak: safeNumber(raw.streak ?? raw.serie_jours ?? raw.serieJours, 0),
+    targetProgress: safeNumber(raw.targetProgress ?? raw.progress ?? raw.objectif_progress, 0),
   };
 }
-function splitName(fullName) {
-  const parts = String(fullName || "").trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return { prenom: "", nom: "" };
-  if (parts.length === 1) return { prenom: parts[0], nom: parts[0] };
-  const prenom = parts.shift();
-  const nom = parts.join(" ");
-  return { prenom, nom };
-}
-// -------------------------
-// Component
-// -------------------------
 export default function BACommandApp() {
+  const storedUser = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem("user") || "null");
+    } catch {
+      return null;
+    }
+  }, []);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [showNotifications, setShowNotifications] = useState(false);
-  const [enrollmentStep, setEnrollmentStep] = useState(1); // 1 | 2 | 3 | 4 | 5 | 6 | 'qr'
+  const [baStats, setBaStats] = useState(null);
+  const [recentRecruits, setRecentRecruits] = useState([]);
+  const [challenges, setChallenges] = useState([]); // (optionnel si endpoint absent)
+  const [leaderboard, setLeaderboard] = useState([]); // (optionnel si endpoint absent)
+  const [loading, setLoading] = useState(true);
+  const [enrollmentStep, setEnrollmentStep] = useState(1);
   const [enrollmentData, setEnrollmentData] = useState({
     type: "chauffeur",
     name: "",
@@ -69,196 +65,88 @@ export default function BACommandApp() {
     vehicleNumber: "",
     vehicleModel: "",
     photoTaken: false,
-    idPhotoTaken: false
+    idPhotoTaken: false,
   });
-  const [baStats, setBaStats] = useState(null);
-  const [recentRecruits, setRecentRecruits] = useState([]);
-  const [challenges, setChallenges] = useState([]);
-  const [leaderboard, setLeaderboard] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
-  const [submittingEnroll, setSubmittingEnroll] = useState(false);
-  const [enrollError, setEnrollError] = useState("");
-  // Fallback UI data (ne contient plus les noms “Jean-Paul / Marcel…”)
-  const defaultChallenges = useMemo(
-    () => [
-      { id: 1, title: "Objectif Semaine", description: "Atteindre 5 enrôlements", progress: 0, reward: "Bonus", endsIn: "—" },
-      { id: 2, title: "Sprint 24h", description: "2 enrôlements en 24h", progress: 0, reward: "Bonus x2", endsIn: "—" }
-    ],
-    []
-  );
-  const safeLeaderboard = useMemo(() => {
-    if (Array.isArray(leaderboard) && leaderboard.length >= 3) return leaderboard;
-    const meName = baStats?.name || "Vous";
-    const meDrivers = baStats?.totalDrivers || 0;
-    return [
-      { rank: 1, name: "—", drivers: 0, badge: "🏆" },
-      { rank: 2, name: "—", drivers: 0, badge: "🥈" },
-      { rank: 3, name: meName, drivers: meDrivers, badge: "🥉", isMe: true }
-    ];
-  }, [leaderboard, baStats]);
-  const safeChallenges = useMemo(() => {
-    if (Array.isArray(challenges) && challenges.length > 0) return challenges;
-    return defaultChallenges;
-  }, [challenges, defaultChallenges]);
-  // -------------------------
-  // Load dashboard from API
-  // -------------------------
-  const loadDashboard = useCallback(async () => {
+  const loadDashboard = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      setLoadError("");
-      // ⚠️ Ton backend confirme /stats/dashboard.
-      // Les autres endpoints sont optionnels : on les tente sans casser l’UI.
-      const results = await Promise.allSettled([
-        api.get("/stats/dashboard"),
-        api.get("/stats/recent"),
-        api.get("/stats/challenges"),
-        api.get("/stats/leaderboard")
-      ]);
-      const statsRes = results[0];
-      if (statsRes.status !== "fulfilled") {
-        throw statsRes.reason;
-      }
-      const rawStats = statsRes.value?.data?.data ?? statsRes.value?.data ?? {};
-      setBaStats(normalizeBaStats(rawStats));
-      const recentRes = results[1];
-      if (recentRes.status === "fulfilled") {
-        setRecentRecruits(recentRes.value?.data?.data ?? []);
-      } else {
-        setRecentRecruits([]);
-      }
-      const challengesRes = results[2];
-      if (challengesRes.status === "fulfilled") {
-        setChallenges(challengesRes.value?.data?.data ?? []);
-      } else {
-        setChallenges([]);
-      }
-      const leaderboardRes = results[3];
-      if (leaderboardRes.status === "fulfilled") {
-        setLeaderboard(leaderboardRes.value?.data?.data ?? []);
-      } else {
-        setLeaderboard([]);
-      }
+      // IMPORTANT : ton backend confirme /api/stats/dashboard existe.
+      const statsRes = await api.get("/stats/dashboard");
+      const normalized = normalizeDashboard(statsRes, storedUser);
+      setBaStats(normalized);
+      // Si ton backend renvoie aussi des listes, on les prend (sinon on garde celles en mémoire)
+      const rr =
+        statsRes?.recentRecruits ||
+        statsRes?.recent_recruits ||
+        statsRes?.data?.recentRecruits ||
+        statsRes?.data?.recent_recruits;
+      if (Array.isArray(rr)) setRecentRecruits(rr);
+      // Optionnel : si tu ajoutes plus tard ces endpoints, ça marchera direct.
+      try {
+        const c = await api.get("/stats/challenges");
+        const arr = c?.data ?? c;
+        if (Array.isArray(arr)) setChallenges(arr);
+      } catch (_) {}
+      try {
+        const l = await api.get("/stats/leaderboard");
+        const arr = l?.data ?? l;
+        if (Array.isArray(arr)) setLeaderboard(arr);
+      } catch (_) {}
     } catch (err) {
       console.error("Erreur chargement dashboard", err);
-      setLoadError("Impossible de charger les statistiques (API).");
-      setBaStats(null);
-      setRecentRecruits([]);
-      setChallenges([]);
-      setLeaderboard([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  };
   useEffect(() => {
     loadDashboard();
-  }, [loadDashboard]);
-  // -------------------------
-  // Enrollment submit (API)
-  // -------------------------
-  const submitEnrollment = useCallback(async () => {
-    setEnrollError("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const submitEnrollment = async () => {
     const isDriver = enrollmentData.type === "chauffeur";
-    // validations UI rapides
-    if (!enrollmentData.name || !enrollmentData.phone) {
-      setEnrollError("Nom et téléphone requis.");
-      return;
-    }
-    if (isDriver && !enrollmentData.station) {
-      setEnrollError("Station requise pour un chauffeur.");
-      return;
-    }
-    if (isDriver && (!enrollmentData.vehicleNumber || !enrollmentData.vehicleModel)) {
-      setEnrollError("Immatriculation et modèle requis.");
-      return;
-    }
-    if (!enrollmentData.photoTaken || !enrollmentData.idPhotoTaken) {
-      setEnrollError("Photos requises.");
-      return;
-    }
-    setSubmittingEnroll(true);
-    try {
-      const { prenom, nom } = splitName(enrollmentData.name);
-      if (isDriver) {
-        // Payload "tolérant" (on envoie plusieurs clés possibles)
-        await api.post("/chauffeurs/enroll", {
-          // champs "frontend"
-          name: enrollmentData.name,
-          phone: enrollmentData.phone,
-          station: enrollmentData.station,
-          vehicleNumber: enrollmentData.vehicleNumber,
-          vehicleModel: enrollmentData.vehicleModel,
-          // champs "backend classiques"
-          prenom,
-          nom,
-          telephone: enrollmentData.phone,
-          immatriculation: enrollmentData.vehicleNumber,
-          modele: enrollmentData.vehicleModel
-        });
-      } else {
-        await api.post("/passagers/enroll", {
-          name: enrollmentData.name,
-          phone: enrollmentData.phone,
-          prenom,
-          nom,
-          telephone: enrollmentData.phone
-        });
-      }
-      // refresh stats après insertion
-      await loadDashboard();
-      // success screen
-      setEnrollmentStep(6);
-    } catch (err) {
-      console.error("Erreur enrôlement", err);
-      const msg =
-        err?.response?.data?.message ||
-        err?.message ||
-        "Erreur lors de l’enrôlement";
-      setEnrollError(msg);
-    } finally {
-      setSubmittingEnroll(false);
-    }
-  }, [enrollmentData, loadDashboard]);
-  // -------------------------
-  // Loading / Error screens
-  // -------------------------
-  if (loading) {
+    // Payload “propre” (si ton backend attend d’autres noms de champs,
+    // on adaptera après en 2 minutes en regardant le controller)
+    const payloadCommon = {
+      nom: enrollmentData.name,
+      telephone: enrollmentData.phone,
+    };
+    const payloadDriver = {
+      ...payloadCommon,
+      station: enrollmentData.station,
+      immatriculation: enrollmentData.vehicleNumber,
+      modele: enrollmentData.vehicleModel,
+    };
+    const endpoint = isDriver ? "/chauffeurs/enroll" : "/passagers/enroll";
+    const payload = isDriver ? payloadDriver : payloadCommon;
+    const res = await api.post(endpoint, payload);
+    // Met à jour “Recrues récentes” côté UI même si backend ne renvoie pas la liste
+    const nowLabel = "À l’instant";
+    setRecentRecruits((prev) => [
+      {
+        id: res?.data?.id ?? res?.id ?? Date.now(),
+        name: enrollmentData.name,
+        type: isDriver ? "Chauffeur" : "Passager",
+        status: "Inscrit",
+        commission: 0,
+        date: nowLabel,
+        courses: 0,
+      },
+      ...prev,
+    ]);
+    // Recharge les stats après insertion DB (c’est ça qui règle ton inquiétude)
+    await loadDashboard();
+    return res;
+  };
+  if (loading || !baStats) {
     return (
       <div className="min-h-screen flex items-center justify-center text-gray-500">
         Chargement du dashboard...
       </div>
     );
   }
-  if (loadError || !baStats) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center text-gray-600 p-6">
-        <div className="font-semibold mb-2">Dashboard indisponible</div>
-        <div className="text-sm mb-4">{loadError || "baStats vide"}</div>
-        <button
-          onClick={loadDashboard}
-          className="px-4 py-2 rounded-lg bg-orange-500 text-white font-semibold"
-        >
-          Réessayer
-        </button>
-      </div>
-    );
-  }
-  // -------------------------
-  // UI sections (design conservé)
-  // -------------------------
+  // ======== UI (design conservé) ========
   const renderDashboard = () => (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <button
-          onClick={loadDashboard}
-          className="text-xs font-semibold text-gray-600 bg-white border border-gray-200 px-3 py-2 rounded-xl flex items-center gap-2 hover:border-orange-400"
-          title="Rafraîchir"
-        >
-          <RefreshCw size={14} />
-          Rafraîchir
-        </button>
-      </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-gradient-to-br from-yellow-400 to-orange-500 rounded-xl p-4 text-white">
           <div className="text-sm opacity-90">Chauffeurs Actifs</div>
@@ -273,7 +161,7 @@ export default function BACommandApp() {
         <div className="bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl p-4 text-white">
           <div className="text-sm opacity-90">Passagers</div>
           <div className="text-3xl font-bold mt-1">{baStats.totalPassengers}</div>
-          <div className="text-xs mt-1 opacity-80">total enrôlés</div>
+          <div className="text-xs mt-1 opacity-80">total recrutés</div>
         </div>
         <div className="bg-gradient-to-br from-purple-400 to-purple-600 rounded-xl p-4 text-white">
           <div className="text-sm opacity-90">Série en cours</div>
@@ -292,7 +180,7 @@ export default function BACommandApp() {
             style={{ width: `${Math.min(100, Math.max(0, baStats.targetProgress))}%` }}
           />
         </div>
-        <div className="text-xs text-gray-600">Suivi automatique (basé sur l’activité)</div>
+        <div className="text-xs text-gray-600">Progression en temps réel</div>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <button
@@ -325,7 +213,7 @@ export default function BACommandApp() {
           <ChevronRight size={18} className="text-gray-400" />
         </div>
         <div className="space-y-2">
-          {safeChallenges.map((challenge) => (
+          {(challenges.length ? challenges : []).map((challenge) => (
             <div key={challenge.id} className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-3">
               <div className="flex justify-between items-start mb-1">
                 <div className="font-medium text-sm text-gray-800">{challenge.title}</div>
@@ -336,15 +224,16 @@ export default function BACommandApp() {
                 <div className="flex-1 bg-white rounded-full h-2 mr-2">
                   <div
                     className="bg-gradient-to-r from-purple-400 to-pink-500 h-2 rounded-full"
-                    style={{ width: `${Math.min(100, Math.max(0, safeNumber(challenge.progress, 0)))}%` }}
+                    style={{ width: `${challenge.progress}%` }}
                   />
                 </div>
-                <div className="text-xs font-semibold text-purple-600">
-                  {safeNumber(challenge.progress, 0)}%
-                </div>
+                <div className="text-xs font-semibold text-purple-600">{challenge.progress}%</div>
               </div>
             </div>
           ))}
+          {challenges.length === 0 && (
+            <div className="text-xs text-gray-500">Aucun challenge disponible (endpoint non activé).</div>
+          )}
         </div>
       </div>
       <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
@@ -352,45 +241,52 @@ export default function BACommandApp() {
           <div className="font-semibold text-gray-800">Recrues Récentes</div>
           <ChevronRight size={18} className="text-gray-400" />
         </div>
-        {recentRecruits.length === 0 ? (
-          <div className="text-sm text-gray-500 bg-gray-50 rounded-lg p-3">
-            Aucune recrue récente (ou endpoint /stats/recent non activé).
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {recentRecruits.map((recruit) => (
-              <div key={recruit.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
-                <div className="flex items-center space-x-3">
-                  <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${
-                      recruit.type === "chauffeur" || recruit.type === "Chauffeur" ? "bg-yellow-500" : "bg-blue-500"
-                    }`}
-                  >
-                    {(recruit.name || recruit.nom || "?").charAt(0)}
-                  </div>
-                  <div>
-                    <div className="font-medium text-sm text-gray-800">
-                      {recruit.name || `${recruit.prenom || ""} ${recruit.nom || ""}`.trim() || "—"}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {recruit.type || "—"} • {recruit.date || recruit.created_at || "—"}
-                    </div>
-                  </div>
+        <div className="space-y-2">
+          {recentRecruits.slice(0, 6).map((recruit) => (
+            <div key={recruit.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+              <div className="flex items-center space-x-3">
+                <div
+                  className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${
+                    recruit.type === "Chauffeur" ? "bg-yellow-500" : "bg-blue-500"
+                  }`}
+                >
+                  {String(recruit.name || "?").charAt(0)}
                 </div>
-                <div className="text-right">
-                  <div className="text-xs font-semibold px-2 py-1 rounded-full bg-gray-100 text-gray-700">
-                    {recruit.status || "—"}
+                <div>
+                  <div className="font-medium text-sm text-gray-800">{recruit.name}</div>
+                  <div className="text-xs text-gray-500">
+                    {recruit.type} • {recruit.date}
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
+              <div className="text-right">
+                <div
+                  className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                    recruit.status === "Activé"
+                      ? "bg-green-100 text-green-700"
+                      : recruit.status === "Inscrit"
+                      ? "bg-blue-100 text-blue-700"
+                      : "bg-gray-100 text-gray-700"
+                  }`}
+                >
+                  {recruit.status}
+                </div>
+                {safeNumber(recruit.commission) > 0 && (
+                  <div className="text-xs text-green-600 font-semibold mt-1">
+                    +{safeNumber(recruit.commission).toLocaleString()} XAF
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+          {recentRecruits.length === 0 && (
+            <div className="text-xs text-gray-500">Aucune recrue récente.</div>
+          )}
+        </div>
       </div>
     </div>
   );
   const renderEnrollment = () => {
-    const isDriver = enrollmentData.type === "chauffeur";
     if (enrollmentStep === "qr") {
       return (
         <div className="space-y-4">
@@ -457,15 +353,6 @@ export default function BACommandApp() {
               </div>
             </button>
           </div>
-          <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm text-green-800 font-semibold">Aujourd'hui</div>
-                <div className="text-xs text-green-600">Suivi via statistiques</div>
-              </div>
-              <div className="text-3xl font-bold text-green-700">{baStats.totalDrivers + baStats.totalPassengers}</div>
-            </div>
-          </div>
         </div>
       );
     }
@@ -483,7 +370,7 @@ export default function BACommandApp() {
             <div className="space-y-3">
               <button
                 onClick={() => {
-                  setEnrollmentData((s) => ({ ...s, type: "chauffeur" }));
+                  setEnrollmentData((p) => ({ ...p, type: "chauffeur" }));
                   setEnrollmentStep(3);
                 }}
                 className="w-full border-2 border-gray-200 rounded-xl p-6 text-left hover:border-orange-500 transition-all"
@@ -494,13 +381,13 @@ export default function BACommandApp() {
                   </div>
                   <div className="flex-1">
                     <div className="font-bold text-gray-800 text-lg">Chauffeur de Taxi</div>
-                    <div className="text-sm text-gray-600">Enrôlement + suivi d’activité</div>
+                    <div className="text-sm text-gray-600">Enrôlement + suivi KPI</div>
                   </div>
                 </div>
               </button>
               <button
                 onClick={() => {
-                  setEnrollmentData((s) => ({ ...s, type: "passager" }));
+                  setEnrollmentData((p) => ({ ...p, type: "passager" }));
                   setEnrollmentStep(3);
                 }}
                 className="w-full border-2 border-gray-200 rounded-xl p-6 text-left hover:border-blue-500 transition-all"
@@ -521,6 +408,7 @@ export default function BACommandApp() {
       );
     }
     if (enrollmentStep === 3) {
+      const isDriver = enrollmentData.type === "chauffeur";
       return (
         <div className="space-y-4">
           <button onClick={() => setEnrollmentStep(2)} className="text-orange-500 flex items-center text-sm font-medium">
@@ -540,7 +428,7 @@ export default function BACommandApp() {
                 <input
                   type="text"
                   value={enrollmentData.name}
-                  onChange={(e) => setEnrollmentData((s) => ({ ...s, name: e.target.value }))}
+                  onChange={(e) => setEnrollmentData((p) => ({ ...p, name: e.target.value }))}
                   placeholder="Ex: Jean-Paul Mbemba"
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500"
                 />
@@ -550,7 +438,7 @@ export default function BACommandApp() {
                 <input
                   type="tel"
                   value={enrollmentData.phone}
-                  onChange={(e) => setEnrollmentData((s) => ({ ...s, phone: e.target.value }))}
+                  onChange={(e) => setEnrollmentData((p) => ({ ...p, phone: e.target.value }))}
                   placeholder="Ex: +242 06 XXX XXXX"
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500"
                 />
@@ -560,7 +448,7 @@ export default function BACommandApp() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Station Principale *</label>
                   <select
                     value={enrollmentData.station}
-                    onChange={(e) => setEnrollmentData((s) => ({ ...s, station: e.target.value }))}
+                    onChange={(e) => setEnrollmentData((p) => ({ ...p, station: e.target.value }))}
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500"
                   >
                     <option value="">Sélectionner une station</option>
@@ -583,7 +471,7 @@ export default function BACommandApp() {
         </div>
       );
     }
-    if (enrollmentStep === 4 && isDriver) {
+    if (enrollmentStep === 4 && enrollmentData.type === "chauffeur") {
       return (
         <div className="space-y-4">
           <button onClick={() => setEnrollmentStep(3)} className="text-orange-500 flex items-center text-sm font-medium">
@@ -603,9 +491,7 @@ export default function BACommandApp() {
                 <input
                   type="text"
                   value={enrollmentData.vehicleNumber}
-                  onChange={(e) =>
-                    setEnrollmentData((s) => ({ ...s, vehicleNumber: e.target.value.toUpperCase() }))
-                  }
+                  onChange={(e) => setEnrollmentData((p) => ({ ...p, vehicleNumber: e.target.value.toUpperCase() }))}
                   placeholder="Ex: AB-123-CD"
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500"
                 />
@@ -615,7 +501,7 @@ export default function BACommandApp() {
                 <input
                   type="text"
                   value={enrollmentData.vehicleModel}
-                  onChange={(e) => setEnrollmentData((s) => ({ ...s, vehicleModel: e.target.value }))}
+                  onChange={(e) => setEnrollmentData((p) => ({ ...p, vehicleModel: e.target.value }))}
                   placeholder="Ex: Toyota Corolla"
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500"
                 />
@@ -632,13 +518,11 @@ export default function BACommandApp() {
         </div>
       );
     }
-    if (enrollmentStep === 5 || (enrollmentStep === 4 && !isDriver)) {
+    if (enrollmentStep === 5 || (enrollmentStep === 4 && enrollmentData.type === "passager")) {
+      const isDriver = enrollmentData.type === "chauffeur";
       return (
         <div className="space-y-4">
-          <button
-            onClick={() => setEnrollmentStep(isDriver ? 4 : 3)}
-            className="text-orange-500 flex items-center text-sm font-medium"
-          >
+          <button onClick={() => setEnrollmentStep(isDriver ? 4 : 3)} className="text-orange-500 flex items-center text-sm font-medium">
             ← Retour
           </button>
           <div className="bg-white rounded-xl p-6">
@@ -649,17 +533,11 @@ export default function BACommandApp() {
               </div>
               <div className="text-2xl">📸</div>
             </div>
-            {enrollError && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-                {enrollError}
-              </div>
-            )}
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Photo de Profil *</label>
                 <button
-                  type="button"
-                  onClick={() => setEnrollmentData((s) => ({ ...s, photoTaken: true }))}
+                  onClick={() => setEnrollmentData((p) => ({ ...p, photoTaken: true }))}
                   className={`w-full border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center transition-all ${
                     enrollmentData.photoTaken ? "border-green-500 bg-green-50" : "border-gray-300 hover:border-orange-500"
                   }`}
@@ -680,8 +558,7 @@ export default function BACommandApp() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Pièce d'Identité *</label>
                 <button
-                  type="button"
-                  onClick={() => setEnrollmentData((s) => ({ ...s, idPhotoTaken: true }))}
+                  onClick={() => setEnrollmentData((p) => ({ ...p, idPhotoTaken: true }))}
                   className={`w-full border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center transition-all ${
                     enrollmentData.idPhotoTaken ? "border-green-500 bg-green-50" : "border-gray-300 hover:border-orange-500"
                   }`}
@@ -701,35 +578,38 @@ export default function BACommandApp() {
               </div>
             </div>
             <button
-              type="button"
-              onClick={submitEnrollment}
-              disabled={submittingEnroll || !enrollmentData.photoTaken || !enrollmentData.idPhotoTaken}
+              onClick={() => setEnrollmentStep(6)}
+              disabled={!enrollmentData.photoTaken || !enrollmentData.idPhotoTaken}
               className="w-full mt-6 bg-gradient-to-r from-yellow-500 to-orange-500 text-white font-semibold py-4 rounded-xl shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {submittingEnroll ? "Enregistrement..." : "Terminer l'Enrôlement"}
+              Terminer l'Enrôlement
             </button>
           </div>
         </div>
       );
     }
     if (enrollmentStep === 6) {
-      const commission = enrollmentData.type === "chauffeur" ? 5000 : 500;
+      const isDriver = enrollmentData.type === "chauffeur";
+      const commission = isDriver ? 5000 : 500;
       return (
         <div className="space-y-4">
           <div className="bg-white rounded-xl p-8 text-center">
             <div className="w-24 h-24 mx-auto mb-4 bg-gradient-to-br from-green-400 to-emerald-600 rounded-full flex items-center justify-center">
               <Check size={48} className="text-white" />
             </div>
-            <h3 className="text-2xl font-bold text-gray-800 mb-2">Enrôlement Réussi ! 🎉</h3>
-            <p className="text-gray-600 mb-6">{enrollmentData.name} a été enregistré avec succès</p>
-            <div className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl p-4 text-white mb-6">
-              <div className="text-sm opacity-90 mb-1">Commission d'Enrôlement</div>
-              <div className="text-3xl font-bold">+{commission.toLocaleString()} XAF</div>
-              <div className="text-xs opacity-90 mt-1">Suivi automatique dans le dashboard</div>
-            </div>
-            <div className="space-y-3">
-              <button
-                onClick={() => {
+            <h3 className="text-2xl font-bold text-gray-800 mb-2">Validation & Envoi…</h3>
+            <p className="text-gray-600 mb-6">Nous enregistrons {enrollmentData.name} dans la base…</p>
+            <button
+              onClick={async () => {
+                try {
+                  await submitEnrollment();
+                  // si OK, on affiche l’écran “réussi”
+                  // et on garde la même UI
+                  alert("✅ Enrôlement enregistré en base + dashboard rafraîchi !");
+                } catch (e) {
+                  console.error(e);
+                  alert("❌ Échec enrôlement (voir console/logs).");
+                } finally {
                   setEnrollmentStep(1);
                   setEnrollmentData({
                     type: "chauffeur",
@@ -739,21 +619,24 @@ export default function BACommandApp() {
                     vehicleNumber: "",
                     vehicleModel: "",
                     photoTaken: false,
-                    idPhotoTaken: false
+                    idPhotoTaken: false,
                   });
-                  setEnrollError("");
-                }}
-                className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 text-white font-semibold py-4 rounded-xl shadow-lg"
-              >
-                Enrôler un Nouveau
-              </button>
-              <button
-                onClick={() => setActiveTab("dashboard")}
-                className="w-full bg-gray-100 text-gray-700 font-semibold py-4 rounded-xl"
-              >
-                Retour au Dashboard
-              </button>
-            </div>
+                  setActiveTab("dashboard");
+                }
+              }}
+              className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 text-white font-semibold py-4 rounded-xl shadow-lg"
+            >
+              Confirmer l’Enrôlement (+{commission.toLocaleString()} XAF)
+            </button>
+            <button
+              onClick={() => {
+                setEnrollmentStep(1);
+                setActiveTab("dashboard");
+              }}
+              className="w-full mt-3 bg-gray-100 text-gray-700 font-semibold py-4 rounded-xl"
+            >
+              Annuler
+            </button>
           </div>
         </div>
       );
@@ -775,112 +658,54 @@ export default function BACommandApp() {
           <Filter size={20} className="text-gray-600" />
         </button>
       </div>
-      <div className="grid grid-cols-3 gap-2">
-        <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
-          <div className="text-2xl font-bold text-green-700">{baStats.activeDrivers}</div>
-          <div className="text-xs text-green-600">Chauffeurs actifs</div>
-        </div>
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
-          <div className="text-2xl font-bold text-blue-700">{baStats.totalPassengers}</div>
-          <div className="text-xs text-blue-600">Passagers</div>
-        </div>
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-center">
-          <div className="text-2xl font-bold text-yellow-700">{baStats.totalDrivers}</div>
-          <div className="text-xs text-yellow-700">Chauffeurs total</div>
-        </div>
-      </div>
       <div className="space-y-2">
-        {recentRecruits.length === 0 ? (
-          <div className="bg-white border border-gray-200 rounded-xl p-4 text-sm text-gray-500">
-            Liste des recrues : indisponible (active /stats/recent côté API pour l’alimenter).
-          </div>
-        ) : (
-          recentRecruits.map((recruit) => (
-            <div key={recruit.id} className="bg-white border border-gray-200 rounded-xl p-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div
-                    className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg ${
-                      recruit.type === "chauffeur" || recruit.type === "Chauffeur"
-                        ? "bg-gradient-to-br from-yellow-400 to-orange-500"
-                        : "bg-gradient-to-br from-blue-400 to-blue-600"
-                    }`}
-                  >
-                    {(recruit.name || recruit.nom || "?").charAt(0)}
-                  </div>
-                  <div>
-                    <div className="font-semibold text-gray-800">
-                      {recruit.name || `${recruit.prenom || ""} ${recruit.nom || ""}`.trim() || "—"}
-                    </div>
-                    <div className="text-xs text-gray-500">{recruit.type || "—"}</div>
-                  </div>
+        {recentRecruits.map((recruit) => (
+          <div key={recruit.id} className="bg-white border border-gray-200 rounded-xl p-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div
+                  className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg ${
+                    recruit.type === "Chauffeur"
+                      ? "bg-gradient-to-br from-yellow-400 to-orange-500"
+                      : "bg-gradient-to-br from-blue-400 to-blue-600"
+                  }`}
+                >
+                  {String(recruit.name || "?").charAt(0)}
                 </div>
-                <ChevronRight size={20} className="text-gray-400" />
+                <div>
+                  <div className="font-semibold text-gray-800">{recruit.name}</div>
+                  <div className="text-xs text-gray-500">{recruit.type}</div>
+                </div>
               </div>
+              <ChevronRight size={20} className="text-gray-400" />
             </div>
-          ))
-        )}
+          </div>
+        ))}
+        {recentRecruits.length === 0 && <div className="text-xs text-gray-500">Aucune recrue.</div>}
       </div>
     </div>
   );
   const renderLeaderboard = () => (
     <div className="space-y-4">
-      <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-xl p-4 border border-yellow-200">
-        <div className="text-center mb-4">
-          <div className="text-lg font-bold text-gray-800">🏆 Classement National</div>
-          <div className="text-xs text-gray-600">Temps réel</div>
-        </div>
-        <div className="flex justify-center items-end space-x-2 mb-4">
-          <div className="text-center">
-            <div className="w-16 h-16 bg-gradient-to-br from-gray-300 to-gray-400 rounded-full flex items-center justify-center text-white font-bold text-xl mb-2">
-              {safeLeaderboard[1].name.charAt(0)}
-            </div>
-            <div className="text-3xl mb-1">🥈</div>
-            <div className="text-xs font-semibold text-gray-700">{safeLeaderboard[1].name.split(" ")[0]}</div>
-            <div className="text-xs text-gray-600">{safeLeaderboard[1].drivers} recrues</div>
-          </div>
-          <div className="text-center -mt-4">
-            <div className="w-20 h-20 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full flex items-center justify-center text-white font-bold text-2xl mb-2 border-4 border-yellow-300">
-              {safeLeaderboard[0].name.charAt(0)}
-            </div>
-            <div className="text-4xl mb-1">🏆</div>
-            <div className="text-sm font-bold text-gray-800">{safeLeaderboard[0].name.split(" ")[0]}</div>
-            <div className="text-xs text-gray-600 font-semibold">{safeLeaderboard[0].drivers} recrues</div>
-          </div>
-          <div className="text-center">
-            <div className="w-16 h-16 bg-gradient-to-br from-orange-300 to-orange-500 rounded-full flex items-center justify-center text-white font-bold text-xl mb-2">
-              {safeLeaderboard[2].name.charAt(0)}
-            </div>
-            <div className="text-3xl mb-1">🥉</div>
-            <div className="text-xs font-semibold text-gray-700">{safeLeaderboard[2].name.split(" ")[0]}</div>
-            <div className="text-xs text-gray-600">{safeLeaderboard[2].drivers} recrues</div>
-          </div>
-        </div>
-      </div>
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 divide-y">
-        {safeLeaderboard.map((ba) => (
-          <div key={ba.rank} className={`p-4 flex items-center justify-between ${ba.isMe ? "bg-yellow-50" : ""}`}>
-            <div className="flex items-center space-x-3">
-              <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${
-                  ba.rank <= 3
-                    ? "bg-gradient-to-br from-yellow-400 to-orange-500 text-white"
-                    : "bg-gray-200 text-gray-700"
-                }`}
-              >
-                {ba.rank}
-              </div>
-              <div>
-                <div className={`font-semibold ${ba.isMe ? "text-orange-600" : "text-gray-800"}`}>
-                  {ba.name} {ba.isMe ? "(Vous)" : ""}
+      {leaderboard.length === 0 ? (
+        <div className="text-xs text-gray-500">Classement non disponible (endpoint non activé).</div>
+      ) : (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 divide-y">
+          {leaderboard.map((ba) => (
+            <div key={ba.rank} className="p-4 flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center font-bold">
+                  {ba.rank}
                 </div>
-                <div className="text-xs text-gray-600">{ba.drivers} chauffeurs</div>
+                <div>
+                  <div className="font-semibold text-gray-800">{ba.name}</div>
+                  <div className="text-xs text-gray-600">{ba.drivers} chauffeurs</div>
+                </div>
               </div>
             </div>
-            {ba.badge ? <div className="text-2xl">{ba.badge}</div> : null}
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
   const renderCommissions = () => (
@@ -893,17 +718,8 @@ export default function BACommandApp() {
           <div className="bg-white/20 px-3 py-1 rounded-full">Live</div>
         </div>
       </div>
-      <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-        <div className="font-semibold text-gray-800 mb-3">Historique</div>
-        <div className="text-sm text-gray-500 bg-gray-50 rounded-lg p-3">
-          (Optionnel) Ajoute un endpoint /stats/commissions pour afficher l’historique réel.
-        </div>
-      </div>
     </div>
   );
-  // -------------------------
-  // Main layout (design conservé)
-  // -------------------------
   return (
     <div className="max-w-md mx-auto bg-gray-50 min-h-screen pb-20">
       <div className="bg-gradient-to-r from-yellow-500 to-orange-500 text-white p-4 pb-6 rounded-b-3xl shadow-lg">
@@ -920,10 +736,7 @@ export default function BACommandApp() {
               </div>
             </div>
           </div>
-          <button
-            onClick={() => setShowNotifications(!showNotifications)}
-            className="relative bg-white/20 backdrop-blur p-2 rounded-full"
-          >
+          <button onClick={() => setShowNotifications(!showNotifications)} className="relative bg-white/20 backdrop-blur p-2 rounded-full">
             <Bell size={20} />
             <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-xs font-bold">
               3
@@ -937,7 +750,7 @@ export default function BACommandApp() {
           <div className="space-y-2">
             <div className="p-3 bg-gray-50 rounded-lg">
               <div className="font-medium text-sm text-gray-800">Info</div>
-              <div className="text-xs text-gray-600 mt-1">Notifications à connecter à ton backend (optionnel).</div>
+              <div className="text-xs text-gray-600 mt-1">Notifications à brancher sur l’API plus tard.</div>
             </div>
           </div>
         </div>
@@ -953,18 +766,14 @@ export default function BACommandApp() {
         <div className="max-w-md mx-auto grid grid-cols-5">
           <button
             onClick={() => setActiveTab("dashboard")}
-            className={`p-3 flex flex-col items-center space-y-1 ${
-              activeTab === "dashboard" ? "text-orange-500" : "text-gray-400"
-            }`}
+            className={`p-3 flex flex-col items-center space-y-1 ${activeTab === "dashboard" ? "text-orange-500" : "text-gray-400"}`}
           >
             <Home size={22} />
             <span className="text-xs font-medium">Accueil</span>
           </button>
           <button
             onClick={() => setActiveTab("recruits")}
-            className={`p-3 flex flex-col items-center space-y-1 ${
-              activeTab === "recruits" ? "text-orange-500" : "text-gray-400"
-            }`}
+            className={`p-3 flex flex-col items-center space-y-1 ${activeTab === "recruits" ? "text-orange-500" : "text-gray-400"}`}
           >
             <Users size={22} />
             <span className="text-xs font-medium">Recrues</span>
@@ -985,24 +794,18 @@ export default function BACommandApp() {
             >
               <UserPlus size={28} className="text-white" />
             </div>
-            <div className={`text-xs font-medium mt-1 ${activeTab === "enroll" ? "text-orange-500" : "text-gray-700"}`}>
-              Enrôler
-            </div>
+            <div className={`text-xs font-medium mt-1 ${activeTab === "enroll" ? "text-orange-500" : "text-gray-700"}`}>Enrôler</div>
           </button>
           <button
             onClick={() => setActiveTab("leaderboard")}
-            className={`p-3 flex flex-col items-center space-y-1 ${
-              activeTab === "leaderboard" ? "text-orange-500" : "text-gray-400"
-            }`}
+            className={`p-3 flex flex-col items-center space-y-1 ${activeTab === "leaderboard" ? "text-orange-500" : "text-gray-400"}`}
           >
             <TrendingUp size={22} />
             <span className="text-xs font-medium">Ranking</span>
           </button>
           <button
             onClick={() => setActiveTab("commissions")}
-            className={`p-3 flex flex-col items-center space-y-1 ${
-              activeTab === "commissions" ? "text-orange-500" : "text-gray-400"
-            }`}
+            className={`p-3 flex flex-col items-center space-y-1 ${activeTab === "commissions" ? "text-orange-500" : "text-gray-400"}`}
           >
             <Target size={22} />
             <span className="text-xs font-medium">Gains</span>
