@@ -104,29 +104,36 @@ export default function BACommandApp() {
   }, []);
   
   const submitEnrollment = async () => {
-  const payloadDriver = {
-    nom: enrollmentData.name,
-    prenom:
-      enrollmentData.name.split(" ").slice(0, -1).join(" ") ||
-      enrollmentData.name,
-    telephone: enrollmentData.phone,
-    email: null,
+  const isDriver = enrollmentData.type === "chauffeur";
 
-    station_id: Number(enrollmentData.station_id), // ✅ maintenant valide
+  if (isDriver) {
+    const fullName = enrollmentData.name.trim();
+    const parts = fullName.split(" ");
 
-    vehicule_immatriculation: enrollmentData.vehicleNumber,
-    vehicule_marque: enrollmentData.vehicleModel.split(" ")[0] || "N/A",
-    vehicule_modele: enrollmentData.vehicleModel,
-    vehicule_couleur: "N/A",
+    const payloadDriver = {
+      nom: parts.pop(), // dernier mot
+      prenom: parts.join(" ") || fullName,
+      telephone: enrollmentData.phone,
 
-    photo_profil_url: "photo_profil_temp.jpg",
-    photo_id_url: "photo_id_temp.jpg",
-  };
+      station_id: enrollmentData.station_id ?? 1,
 
-  console.log("📤 Payload envoyé :", payloadDriver);
+      vehicule_immatriculation: enrollmentData.vehicleNumber,
+      vehicule_marque: enrollmentData.vehicleModel
+        ? enrollmentData.vehicleModel.split(" ")[0]
+        : "N/A",
+      vehicule_modele: enrollmentData.vehicleModel || "N/A",
 
-  return await api.post("chauffeurs/enroll", payloadDriver);
+      // placeholders obligatoires
+      photo_profil_url: "temp.jpg",
+      photo_id_url: "temp_id.jpg",
+    };
+
+    console.log("📦 Payload chauffeur envoyé :", payloadDriver);
+
+    return api.post("/chauffeurs/enroll", payloadDriver);
+  }
 };
+
 
 
   
