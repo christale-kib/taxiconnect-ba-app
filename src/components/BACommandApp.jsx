@@ -102,41 +102,48 @@ export default function BACommandApp() {
     loadDashboard();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  
   const submitEnrollment = async () => {
-    const isDriver = enrollmentData.type === "chauffeur";
-    // Payload “propre” (si ton backend attend d’autres noms de champs,
-    // on adaptera après en 2 minutes en regardant le controller)
-    const payloadCommon = {
-      nom: enrollmentData.name,
-      telephone: enrollmentData.phone,
-    };
+  const isDriver = enrollmentData.type === "chauffeur";
+
+  if (isDriver) {
     const payloadDriver = {
-      ...payloadCommon,
-      station: enrollmentData.station,
-      immatriculation: enrollmentData.vehicleNumber,
-      modele: enrollmentData.vehicleModel,
+      nom: enrollmentData.name,
+      prenom: enrollmentData.name.split(" ").slice(0, -1).join(" ") || enrollmentData.name,
+      telephone: enrollmentData.phone,
+      email: null,
+
+      // ⚠️ IMPORTANT : doit être un ID NUMÉRIQUE
+      station_id: Number(enrollmentData.station_id),
+
+      vehicule_immatriculation: enrollmentData.vehicleNumber,
+      vehicule_marque: enrollmentData.vehicleModel.split(" ")[0] || "N/A",
+      vehicule_modele: enrollmentData.vehicleModel,
+      vehicule_couleur: "N/A",
+
+      // placeholders temporaires (obligatoires côté backend)
+      photo_profil_url: "photo_profil_temp.jpg",
+      photo_id_url: "photo_id_temp.jpg",
     };
-    const endpoint = isDriver ? "/chauffeurs/enroll" : "/passagers/enroll";
-    const payload = isDriver ? payloadDriver : payloadCommon;
-    const res = await api.post(endpoint, payload);
-    // Met à jour “Recrues récentes” côté UI même si backend ne renvoie pas la liste
-    const nowLabel = "À l’instant";
-    setRecentRecruits((prev) => [
-      {
-        id: res?.data?.id ?? res?.id ?? Date.now(),
-        name: enrollmentData.name,
-        type: isDriver ? "Chauffeur" : "Passager",
-        status: "Inscrit",
-        commission: 0,
-        date: nowLabel,
-        courses: 0,
-      },
-      ...prev,
-    ]);
-    // Recharge les stats après insertion DB (c’est ça qui règle ton inquiétude)
-    await loadDashboard();
-    return res;
+
+    return await api.post("/chauffeurs/enroll", payloadDriver);
+  }
+
+  // PASSAGER
+  const payloadPassenger = {
+    nom: enrollmentData.name,
+    prenom: enrollmentData.name.split(" ").slice(0, -1).join(" ") || enrollmentData.name,
+    telephone: enrollmentData.phone,
+    email: null,
+    photo_profil_url: "photo_profil_temp.jpg",
+    photo_id_url: "photo_id_temp.jpg",
   };
+
+  return await api.post("/passagers/enroll", payloadPassenger);
+};
+
+  
+  
   if (loading || !baStats) {
     return (
       <div className="min-h-screen flex items-center justify-center text-gray-500">
@@ -452,10 +459,10 @@ export default function BACommandApp() {
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500"
                   >
                     <option value="">Sélectionner une station</option>
-                    <option value="Station Aéroport">Station Aéroport</option>
-                    <option value="Station Marché Central">Station Marché Central</option>
-                    <option value="Station Gare Routière">Station Gare Routière</option>
-                    <option value="Station Moungali">Station Moungali</option>
+                    <option value="1">Station Aéroport</option>
+                    <option value="2">Station Marché Central</option>
+                    <option value="3">Station Gare Routière</option>
+                    <option value="4">Station Moungali</option>
                   </select>
                 </div>
               )}
