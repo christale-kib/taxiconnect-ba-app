@@ -464,7 +464,7 @@ export default function BACommandApp() {
             </div>
             <button
               onClick={() => setEnrollmentStep(4)}
-              disabled={!enrollmentData.name || !enrollmentData.phone || (isDriver && !enrollmentData.station)}
+              disabled={!enrollmentData.name || !enrollmentData.phone || (isDriver && !enrollmentData.station_id)}
               className="w-full mt-6 bg-gradient-to-r from-yellow-500 to-orange-500 text-white font-semibold py-4 rounded-xl shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Continuer
