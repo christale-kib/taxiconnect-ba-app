@@ -104,43 +104,30 @@ export default function BACommandApp() {
   }, []);
   
   const submitEnrollment = async () => {
-  const isDriver = enrollmentData.type === "chauffeur";
-
-  if (isDriver) {
-    const payloadDriver = {
-      nom: enrollmentData.name,
-      prenom: enrollmentData.name.split(" ").slice(0, -1).join(" ") || enrollmentData.name,
-      telephone: enrollmentData.phone,
-      email: null,
-
-      // ⚠️ IMPORTANT : doit être un ID NUMÉRIQUE
-      station_id: Number(enrollmentData.station_id),
-
-      vehicule_immatriculation: enrollmentData.vehicleNumber,
-      vehicule_marque: enrollmentData.vehicleModel.split(" ")[0] || "N/A",
-      vehicule_modele: enrollmentData.vehicleModel,
-      vehicule_couleur: "N/A",
-
-      // placeholders temporaires (obligatoires côté backend)
-      photo_profil_url: "photo_profil_temp.jpg",
-      photo_id_url: "photo_id_temp.jpg",
-    };
-
-    return await api.post("/chauffeurs/enroll", payloadDriver);
-  }
-
-  // PASSAGER
-  const payloadPassenger = {
+  const payloadDriver = {
     nom: enrollmentData.name,
-    prenom: enrollmentData.name.split(" ").slice(0, -1).join(" ") || enrollmentData.name,
+    prenom:
+      enrollmentData.name.split(" ").slice(0, -1).join(" ") ||
+      enrollmentData.name,
     telephone: enrollmentData.phone,
     email: null,
+
+    station_id: Number(enrollmentData.station_id), // ✅ maintenant valide
+
+    vehicule_immatriculation: enrollmentData.vehicleNumber,
+    vehicule_marque: enrollmentData.vehicleModel.split(" ")[0] || "N/A",
+    vehicule_modele: enrollmentData.vehicleModel,
+    vehicule_couleur: "N/A",
+
     photo_profil_url: "photo_profil_temp.jpg",
     photo_id_url: "photo_id_temp.jpg",
   };
 
-  return await api.post("/passagers/enroll", payloadPassenger);
+  console.log("📤 Payload envoyé :", payloadDriver);
+
+  return await api.post("chauffeurs/enroll", payloadDriver);
 };
+
 
   
   
@@ -452,20 +439,28 @@ export default function BACommandApp() {
               </div>
               {isDriver && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Station Principale *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Station Principale *
+                  </label>
                   <select
-                    value={enrollmentData.station}
-                    onChange={(e) => setEnrollmentData((p) => ({ ...p, station: e.target.value }))}
+                    value={enrollmentData.station_id}
+                    onChange={(e) =>
+                      setEnrollmentData((p) => ({
+                        ...p,
+                        station_id: e.target.value,
+                      }))
+                    }
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500"
                   >
                     <option value="">Sélectionner une station</option>
-                    <option value="1">Station Aéroport</option>
-                    <option value="2">Station Marché Central</option>
-                    <option value="3">Station Gare Routière</option>
-                    <option value="4">Station Moungali</option>
+                    <option value={1}>Station Aéroport</option>
+                    <option value={2}>Station Marché Central</option>
+                    <option value={3}>Station Gare Routière</option>
+                    <option value={4}>Station Moungali</option>
                   </select>
                 </div>
               )}
+
             </div>
             <button
               onClick={() => setEnrollmentStep(4)}
