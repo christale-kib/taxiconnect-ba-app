@@ -17,10 +17,12 @@ import {
   UserPlus,
   Users,
 } from "lucide-react";
+
 function safeNumber(v, def = 0) {
   const n = Number(v);
   return Number.isFinite(n) ? n : def;
 }
+
 function normalizeDashboard(payload, fallbackUser) {
   const raw = payload?.data ?? payload?.stats ?? payload ?? {};
   const fullName =
@@ -41,6 +43,7 @@ function normalizeDashboard(payload, fallbackUser) {
     targetProgress: safeNumber(raw.targetProgress ?? raw.progress ?? raw.objectif_progress, 0),
   };
 }
+
 export default function BACommandApp() {
   const storedUser = useMemo(() => {
     try {
@@ -49,44 +52,46 @@ export default function BACommandApp() {
       return null;
     }
   }, []);
+
   const [activeTab, setActiveTab] = useState("dashboard");
   const [showNotifications, setShowNotifications] = useState(false);
   const [baStats, setBaStats] = useState(null);
   const [recentRecruits, setRecentRecruits] = useState([]);
-  const [challenges, setChallenges] = useState([]); // (optionnel si endpoint absent)
-  const [leaderboard, setLeaderboard] = useState([]); // (optionnel si endpoint absent)
+  const [challenges, setChallenges] = useState([]);
+  const [leaderboard, setLeaderboard] = useState([]);
   const [loading, setLoading] = useState(true);
   const [enrollmentStep, setEnrollmentStep] = useState(1);
   const [enrollmentData, setEnrollmentData] = useState({
     type: "chauffeur",
     name: "",
     phone: "",
-    station: "",
+    station_id: "",
     vehicleNumber: "",
     vehicleModel: "",
     photoTaken: false,
     idPhotoTaken: false,
   });
+
   const loadDashboard = async () => {
     setLoading(true);
     try {
-      // IMPORTANT : ton backend confirme /api/stats/dashboard existe.
       const statsRes = await api.get("/stats/dashboard");
       const normalized = normalizeDashboard(statsRes, storedUser);
       setBaStats(normalized);
-      // Si ton backend renvoie aussi des listes, on les prend (sinon on garde celles en mémoire)
+
       const rr =
         statsRes?.recentRecruits ||
         statsRes?.recent_recruits ||
         statsRes?.data?.recentRecruits ||
         statsRes?.data?.recent_recruits;
       if (Array.isArray(rr)) setRecentRecruits(rr);
-      // Optionnel : si tu ajoutes plus tard ces endpoints, ça marchera direct.
+
       try {
         const c = await api.get("/stats/challenges");
         const arr = c?.data ?? c;
         if (Array.isArray(arr)) setChallenges(arr);
       } catch (_) {}
+
       try {
         const l = await api.get("/stats/leaderboard");
         const arr = l?.data ?? l;
@@ -98,46 +103,91 @@ export default function BACommandApp() {
       setLoading(false);
     }
   };
+
   useEffect(() => {
     loadDashboard();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  
+
+  // ✅ CORRECTION: Fonction d'enrôlement avec payload complet ET LOGS DÉTAILLÉS
   const submitEnrollment = async () => {
-  const isDriver = enrollmentData.type === "chauffeur";
+    console.log('\n═══════════════════════════════════════════════════════');
+    console.log('🚀 DÉBUT ENRÔLEMENT FRONTEND');
+    console.log('═══════════════════════════════════════════════════════');
+    
+    const isDriver = enrollmentData.type === "chauffeur";
+    console.log('📋 TYPE:', isDriver ? 'CHAUFFEUR' : 'PASSAGER');
+    console.log('📦 DONNÉES BRUTES FORMULAIRE:', enrollmentData);
 
-  if (isDriver) {
-    const fullName = enrollmentData.name.trim();
-    const parts = fullName.split(" ");
+    if (isDriver) {
+      const fullName = enrollmentData.name.trim();
+      const parts = fullName.split(" ");
+      
+      console.log('👤 EXTRACTION NOM/PRÉNOM:');
+      console.log('  - Nom complet:', fullName);
+      console.log('  - Parts:', parts);
+      console.log('  - Nom:', parts[parts.length - 1]);
+      console.log('  - Prénom:', parts.slice(0, -1).join(" ") || fullName);
 
-    const payloadDriver = {
-      nom: parts.pop(), // dernier mot
-      prenom: parts.join(" ") || fullName,
-      telephone: enrollmentData.phone,
+      const payloadDriver = {
+        nom: parts.pop(), // dernier mot
+        prenom: parts.join(" ") || fullName,
+        telephone: enrollmentData.phone,
+        email: "", // ✅ AJOUT: champ requis (même vide)
 
-      station_id: enrollmentData.station_id ?? 1,
+        station_id: Number(enrollmentData.station_id) || 1, // ✅ CORRECTION: forcer en Number
 
-      vehicule_immatriculation: enrollmentData.vehicleNumber,
-      vehicule_marque: enrollmentData.vehicleModel
-        ? enrollmentData.vehicleModel.split(" ")[0]
-        : "N/A",
-      vehicule_modele: enrollmentData.vehicleModel || "N/A",
+        vehicule_immatriculation: enrollmentData.vehicleNumber,
+        vehicule_marque: enrollmentData.vehicleModel
+          ? enrollmentData.vehicleModel.split(" ")[0]
+          : "N/A",
+        vehicule_modele: enrollmentData.vehicleModel || "N/A",
+        vehicule_couleur: "N/A", // ✅ AJOUT: champ optionnel mais utile
 
-      // placeholders obligatoires
-      photo_profil_url: "temp.jpg",
-      photo_id_url: "temp_id.jpg",
-    };
+        photo_profil_url: "temp.jpg",
+        photo_id_url: "temp_id.jpg",
+      };
 
-    console.log("📦 Payload chauffeur envoyé :", payloadDriver);
+      console.log('✅ PAYLOAD CHAUFFEUR FINAL:', payloadDriver);
+      console.log('🔢 VÉRIFICATION TYPES:');
+      console.log('  - station_id:', typeof payloadDriver.station_id, '=', payloadDriver.station_id);
+      console.log('  - nom:', typeof payloadDriver.nom, '=', payloadDriver.nom);
+      console.log('  - prenom:', typeof payloadDriver.prenom, '=', payloadDriver.prenom);
+      console.log('═══════════════════════════════════════════════════════\n');
 
-    return api.post("/chauffeurs/enroll", payloadDriver);
-  }
-};
+      return api.post("/chauffeurs/enroll", payloadDriver);
+    } else {
+      // Pour les passagers
+      const fullName = enrollmentData.name.trim();
+      const parts = fullName.split(" ");
+      
+      console.log('👤 EXTRACTION NOM/PRÉNOM:');
+      console.log('  - Nom complet:', fullName);
+      console.log('  - Parts:', parts);
+      console.log('  - Nom:', parts[parts.length - 1]);
+      console.log('  - Prénom:', parts.slice(0, -1).join(" ") || fullName);
 
+      const payloadPassenger = {
+        nom: parts.pop(),
+        prenom: parts.join(" ") || fullName,
+        telephone: enrollmentData.phone,
+        email: "", // ✅ AJOUT: champ requis (même vide)
+        photo_profil_url: "temp.jpg",
+        photo_id_url: "temp_id.jpg",
+      };
 
+      console.log('✅ PAYLOAD PASSAGER FINAL:', payloadPassenger);
+      console.log('🔢 VÉRIFICATION TYPES:');
+      console.log('  - nom:', typeof payloadPassenger.nom, '=', payloadPassenger.nom);
+      console.log('  - prenom:', typeof payloadPassenger.prenom, '=', payloadPassenger.prenom);
+      console.log('  - telephone:', typeof payloadPassenger.telephone, '=', payloadPassenger.telephone);
+      console.log('  - email:', typeof payloadPassenger.email, '=', payloadPassenger.email);
+      console.log('═══════════════════════════════════════════════════════\n');
 
-  
-  
+      return api.post("/passagers/enroll", payloadPassenger);
+    }
+  };
+
   if (loading || !baStats) {
     return (
       <div className="min-h-screen flex items-center justify-center text-gray-500">
@@ -145,7 +195,8 @@ export default function BACommandApp() {
       </div>
     );
   }
-  // ======== UI (design conservé) ========
+
+  // ======== UI COMPONENTS ========
   const renderDashboard = () => (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
@@ -170,6 +221,7 @@ export default function BACommandApp() {
           <div className="text-xs mt-1 opacity-80">jours consécutifs</div>
         </div>
       </div>
+
       <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
         <div className="flex items-center justify-between mb-2">
           <div className="font-semibold text-gray-800">Objectif Mensuel</div>
@@ -183,6 +235,7 @@ export default function BACommandApp() {
         </div>
         <div className="text-xs text-gray-600">Progression en temps réel</div>
       </div>
+
       <div className="grid grid-cols-2 gap-3">
         <button
           onClick={() => {
@@ -205,6 +258,7 @@ export default function BACommandApp() {
           <span className="font-semibold">Ajout Manuel</span>
         </button>
       </div>
+
       <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
         <div className="flex items-center justify-between mb-3">
           <div className="font-semibold text-gray-800 flex items-center">
@@ -233,10 +287,11 @@ export default function BACommandApp() {
             </div>
           ))}
           {challenges.length === 0 && (
-            <div className="text-xs text-gray-500">Aucun challenge disponible (endpoint non activé).</div>
+            <div className="text-xs text-gray-500">Aucun challenge disponible.</div>
           )}
         </div>
       </div>
+
       <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
         <div className="flex items-center justify-between mb-3">
           <div className="font-semibold text-gray-800">Recrues Récentes</div>
@@ -314,6 +369,7 @@ export default function BACommandApp() {
         </div>
       );
     }
+
     if (enrollmentStep === 1) {
       return (
         <div className="space-y-4">
@@ -357,6 +413,7 @@ export default function BACommandApp() {
         </div>
       );
     }
+
     if (enrollmentStep === 2) {
       return (
         <div className="space-y-4">
@@ -408,6 +465,7 @@ export default function BACommandApp() {
         </div>
       );
     }
+
     if (enrollmentStep === 3) {
       const isDriver = enrollmentData.type === "chauffeur";
       return (
@@ -460,14 +518,13 @@ export default function BACommandApp() {
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500"
                   >
                     <option value="">Sélectionner une station</option>
-                    <option value={1}>Station Aéroport</option>
-                    <option value={2}>Station Marché Central</option>
-                    <option value={3}>Station Gare Routière</option>
-                    <option value={4}>Station Moungali</option>
+                    <option value="1">Station Aéroport</option>
+                    <option value="2">Station Marché Central</option>
+                    <option value="3">Station Gare Routière</option>
+                    <option value="4">Station Moungali</option>
                   </select>
                 </div>
               )}
-
             </div>
             <button
               onClick={() => setEnrollmentStep(4)}
@@ -480,6 +537,7 @@ export default function BACommandApp() {
         </div>
       );
     }
+
     if (enrollmentStep === 4 && enrollmentData.type === "chauffeur") {
       return (
         <div className="space-y-4">
@@ -527,6 +585,7 @@ export default function BACommandApp() {
         </div>
       );
     }
+
     if (enrollmentStep === 5 || (enrollmentStep === 4 && enrollmentData.type === "passager")) {
       const isDriver = enrollmentData.type === "chauffeur";
       return (
@@ -597,6 +656,7 @@ export default function BACommandApp() {
         </div>
       );
     }
+
     if (enrollmentStep === 6) {
       const isDriver = enrollmentData.type === "chauffeur";
       const commission = isDriver ? 5000 : 500;
@@ -610,32 +670,60 @@ export default function BACommandApp() {
             <p className="text-gray-600 mb-6">Nous enregistrons {enrollmentData.name} dans la base…</p>
             <button
               onClick={async () => {
+                console.log('\n🎯 BOUTON CONFIRMER CLIQUÉ');
+                console.log('📋 Type enrôlement:', enrollmentData.type);
+                
                 try {
-                  await submitEnrollment();
-                  // si OK, on affiche l’écran “réussi”
-                  // et on garde la même UI
-                  alert("✅ Enrôlement enregistré en base + dashboard rafraîchi !");
-                } catch (e) {
-                  console.error(e);
-                  alert("❌ Échec enrôlement (voir console/logs).");
-                } finally {
+                  console.log('📤 ENVOI REQUÊTE API...');
+                  const response = await submitEnrollment();
+                  
+                  console.log('✅ RÉPONSE API REÇUE:', response);
+                  console.log('🔄 RAFRAÎCHISSEMENT DASHBOARD...');
+                  
+                  await loadDashboard();
+                  
+                  console.log('✅ ENRÔLEMENT RÉUSSI !');
+                  alert("✅ Enrôlement réussi !");
+                  
+                  // Réinitialiser le formulaire
                   setEnrollmentStep(1);
                   setEnrollmentData({
                     type: "chauffeur",
                     name: "",
                     phone: "",
-                    station: "",
+                    station_id: "",
                     vehicleNumber: "",
                     vehicleModel: "",
                     photoTaken: false,
                     idPhotoTaken: false,
                   });
                   setActiveTab("dashboard");
+                  
+                } catch (e) {
+                  console.error('═══════════════════════════════════════════════════════');
+                  console.error('❌ ERREUR ENRÔLEMENT FRONTEND');
+                  console.error('═══════════════════════════════════════════════════════');
+                  console.error('Type:', enrollmentData.type);
+                  console.error('Erreur complète:', e);
+                  console.error('Message:', e.message);
+                  console.error('Response:', e.response);
+                  console.error('Data:', e.response?.data);
+                  console.error('═══════════════════════════════════════════════════════\n');
+                  
+                  const errorMessage = e.response?.data?.message || e.message || 'Erreur inconnue';
+                  const errorDetails = e.response?.data?.errors || [];
+                  
+                  let alertMessage = `❌ Échec de l'enrôlement\n\n${errorMessage}`;
+                  if (errorDetails.length > 0) {
+                    alertMessage += '\n\nDétails:\n' + errorDetails.join('\n');
+                  }
+                  
+                  alert(alertMessage);
                 }
               }}
               className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 text-white font-semibold py-4 rounded-xl shadow-lg"
             >
-              Confirmer l’Enrôlement (+{commission.toLocaleString()} XAF)
+              Confirmer l'Enrôlement (+{commission.toLocaleString()} XAF)
             </button>
             <button
               onClick={() => {
@@ -650,6 +738,7 @@ export default function BACommandApp() {
         </div>
       );
     }
+
     return null;
   };
   const renderRecruits = () => (
@@ -694,10 +783,11 @@ export default function BACommandApp() {
       </div>
     </div>
   );
+
   const renderLeaderboard = () => (
     <div className="space-y-4">
       {leaderboard.length === 0 ? (
-        <div className="text-xs text-gray-500">Classement non disponible (endpoint non activé).</div>
+        <div className="text-xs text-gray-500">Classement non disponible.</div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 divide-y">
           {leaderboard.map((ba) => (
@@ -717,6 +807,7 @@ export default function BACommandApp() {
       )}
     </div>
   );
+
   const renderCommissions = () => (
     <div className="space-y-4">
       <div className="bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl p-6 text-white">
@@ -729,6 +820,8 @@ export default function BACommandApp() {
       </div>
     </div>
   );
+
+  // ======== RENDER PRINCIPAL ========
   return (
     <div className="max-w-md mx-auto bg-gray-50 min-h-screen pb-20">
       <div className="bg-gradient-to-r from-yellow-500 to-orange-500 text-white p-4 pb-6 rounded-b-3xl shadow-lg">
@@ -753,17 +846,19 @@ export default function BACommandApp() {
           </button>
         </div>
       </div>
+
       {showNotifications && (
         <div className="absolute top-20 right-4 left-4 bg-white rounded-xl shadow-2xl p-4 z-50 border border-gray-200">
           <div className="font-semibold mb-3 text-gray-800">Notifications</div>
           <div className="space-y-2">
             <div className="p-3 bg-gray-50 rounded-lg">
               <div className="font-medium text-sm text-gray-800">Info</div>
-              <div className="text-xs text-gray-600 mt-1">Notifications à brancher sur l’API plus tard.</div>
+              <div className="text-xs text-gray-600 mt-1">Notifications à brancher sur l'API plus tard.</div>
             </div>
           </div>
         </div>
       )}
+
       <div className="p-4">
         {activeTab === "dashboard" && renderDashboard()}
         {activeTab === "enroll" && renderEnrollment()}
@@ -771,6 +866,7 @@ export default function BACommandApp() {
         {activeTab === "leaderboard" && renderLeaderboard()}
         {activeTab === "commissions" && renderCommissions()}
       </div>
+
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg">
         <div className="max-w-md mx-auto grid grid-cols-5">
           <button
